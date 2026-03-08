@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import os
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -28,6 +30,24 @@ async def on_shutdown(bot: Bot) -> None:
     logger.info("Bot stopped")
 
 
+async def run_health_server() -> None:
+    """Minimal HTTP server so Railway web service health check passes."""
+    port = int(os.environ.get("PORT", 8080))
+
+    async def health(request: web.Request) -> web.Response:
+        return web.Response(text="OK")
+
+    app = web.Application()
+    app.router.add_get("/", health)
+    app.router.add_get("/health", health)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info("Health server listening on port %d", port)
+
+
 async def main() -> None:
     bot = Bot(
         token=settings.bot_token,
@@ -39,6 +59,8 @@ async def main() -> None:
     dp.shutdown.register(on_shutdown)
 
     register_all_handlers(dp)
+
+    await run_health_server()
 
     logger.info("Starting polling...")
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

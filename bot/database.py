@@ -8,7 +8,7 @@ from bot.config import settings
 logger = logging.getLogger(__name__)
 
 engine = create_async_engine(
-    settings.database_url,
+    settings.async_database_url,
     echo=settings.log_level.upper() == "DEBUG",
     pool_pre_ping=True,
     pool_size=5,

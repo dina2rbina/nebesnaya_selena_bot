@@ -30,8 +30,8 @@ async def on_shutdown(bot: Bot) -> None:
     logger.info("Bot stopped")
 
 
-async def run_health_server() -> None:
-    """Minimal HTTP server so Railway web service health check passes."""
+async def _health_server_task() -> None:
+    """Runs forever — keeps Railway web healthcheck happy."""
     port = int(os.environ.get("PORT", 8080))
 
     async def health(request: web.Request) -> web.Response:
@@ -47,6 +47,9 @@ async def run_health_server() -> None:
     await site.start()
     logger.info("Health server listening on port %d", port)
 
+    # Block forever so the task (and runner/site) stays alive
+    await asyncio.Event().wait()
+
 
 async def main() -> None:
     bot = Bot(
@@ -60,7 +63,9 @@ async def main() -> None:
 
     register_all_handlers(dp)
 
-    await run_health_server()
+    # Start health server as a background task so it lives alongside polling
+    asyncio.create_task(_health_server_task())
+    await asyncio.sleep(0)  # yield to let the task bind the port
 
     logger.info("Starting polling...")
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

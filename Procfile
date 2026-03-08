@@ -1,1 +1,1 @@
-worker: alembic upgrade head && python -m bot.main
+web: python -u -m bot.main

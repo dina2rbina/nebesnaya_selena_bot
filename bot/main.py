@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+import subprocess
+import sys
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
@@ -51,7 +53,32 @@ async def _health_server_task() -> None:
     await asyncio.Event().wait()
 
 
+def _run_alembic_migrations() -> None:
+    """Run alembic upgrade head synchronously before the bot starts."""
+    logger.info("Running database migrations...")
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout:
+        logger.info("Alembic stdout:\n%s", result.stdout)
+    if result.stderr:
+        logger.info("Alembic stderr:\n%s", result.stderr)
+    if result.returncode != 0:
+        raise RuntimeError(f"Alembic migration failed with code {result.returncode}")
+    logger.info("Migrations done.")
+
+
 async def main() -> None:
+    # Start health server immediately so Railway healthcheck can pass
+    asyncio.create_task(_health_server_task())
+    await asyncio.sleep(0.1)  # yield to let the task bind the port
+
+    # Run migrations in a thread so we don't block the event loop
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_alembic_migrations)
+
     bot = Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -62,10 +89,6 @@ async def main() -> None:
     dp.shutdown.register(on_shutdown)
 
     register_all_handlers(dp)
-
-    # Start health server as a background task so it lives alongside polling
-    asyncio.create_task(_health_server_task())
-    await asyncio.sleep(0)  # yield to let the task bind the port
 
     logger.info("Starting polling...")
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
